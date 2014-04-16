@@ -585,7 +585,7 @@ out_unlock:
 		nfs41_server_notify_highest_slotid_update(session->clp);
 }
 
-static int nfs41_sequence_done(struct rpc_task *task, struct nfs4_sequence_res *res)
+int nfs41_sequence_done(struct rpc_task *task, struct nfs4_sequence_res *res)
 {
 	struct nfs4_session *session;
 	struct nfs4_slot *slot;
@@ -685,6 +685,7 @@ out_retry:
 	rpc_delay(task, NFS4_POLL_RETRY_MAX);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(nfs41_sequence_done);
 
 static int nfs4_sequence_done(struct rpc_task *task,
 			       struct nfs4_sequence_res *res)
@@ -5779,21 +5780,20 @@ struct nfs_release_lockowner_data {
 	struct nfs4_lock_state *lsp;
 	struct nfs_server *server;
 	struct nfs_release_lockowner_args args;
-	struct nfs4_sequence_args seq_args;
-	struct nfs4_sequence_res seq_res;
+	struct nfs_release_lockowner_res res;
 };
 
 static void nfs4_release_lockowner_prepare(struct rpc_task *task, void *calldata)
 {
 	struct nfs_release_lockowner_data *data = calldata;
 	nfs40_setup_sequence(data->server,
-				&data->seq_args, &data->seq_res, task);
+				&data->args.seq_args, &data->res.seq_res, task);
 }
 
 static void nfs4_release_lockowner_done(struct rpc_task *task, void *calldata)
 {
 	struct nfs_release_lockowner_data *data = calldata;
-	nfs40_sequence_done(task, &data->seq_res);
+	nfs40_sequence_done(task, &data->res.seq_res);
 }
 
 static void nfs4_release_lockowner_release(void *calldata)
@@ -5822,7 +5822,6 @@ static int nfs4_release_lockowner(struct nfs_server *server, struct nfs4_lock_st
 	data = kmalloc(sizeof(*data), GFP_NOFS);
 	if (!data)
 		return -ENOMEM;
-	nfs4_init_sequence(&data->seq_args, &data->seq_res, 0);
 	data->lsp = lsp;
 	data->server = server;
 	data->args.lock_owner.clientid = server->nfs_client->cl_clientid;
@@ -5830,6 +5829,8 @@ static int nfs4_release_lockowner(struct nfs_server *server, struct nfs4_lock_st
 	data->args.lock_owner.s_dev = server->s_dev;
 
 	msg.rpc_argp = &data->args;
+	msg.rpc_resp = &data->res;
+	nfs4_init_sequence(&data->args.seq_args, &data->res.seq_res, 0);
 	rpc_call_async(server->client, &msg, 0, &nfs4_release_lockowner_ops, data);
 	return 0;
 }
@@ -7273,7 +7274,14 @@ static void nfs4_layoutreturn_done(struct rpc_task *task, void *calldata)
 		return;
 
 	server = NFS_SERVER(lrp->args.inode);
-	if (nfs4_async_handle_error(task, server, NULL) == -EAGAIN) {
+	switch (task->tk_status) {
+	default:
+		task->tk_status = 0;
+	case 0:
+		break;
+	case -NFS4ERR_DELAY:
+		if (nfs4_async_handle_error(task, server, NULL) != -EAGAIN)
+			break;
 		rpc_restart_call_prepare(task);
 		return;
 	}
