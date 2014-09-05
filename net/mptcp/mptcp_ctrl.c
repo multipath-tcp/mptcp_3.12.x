@@ -2274,7 +2274,8 @@ void __init mptcp_init(void)
 	if (mptcp_register_path_manager(&mptcp_pm_default))
 		goto register_pm_failed;
 
-	pr_info("MPTCP: release for 3.12 series, v0.88.12.0");
+	pr_info("MPTCP: release for 3.12 series, v0.88.12.1");
+	pr_warn("MPTCP: v0.88.13 will be EOL! Please consider updating to MPTCP 0.89.1 or higher!");
 
 	mptcp_init_failed = false;
 
